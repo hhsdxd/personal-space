@@ -277,17 +277,30 @@
   /* Weather preview inline */
   .weather-mini {
     display: flex;
-    align-items: center;
-    gap: 8px;
+    flex-direction: column;
+    gap: 6px;
     padding: 12px 16px;
     background: rgba(72,200,120,0.04);
     border: 1px solid rgba(72,200,120,0.1);
     border-radius: var(--radius-sm);
     margin-bottom: 16px;
   }
-  .weather-mini .w-icon { font-size: 1.4rem; }
-  .weather-mini .w-temp { font-family: var(--font-mono); font-size: 1.2rem; font-weight: 600; color: var(--green); }
-  .weather-mini .w-desc { font-size: 0.78rem; color: var(--text-muted); margin-left: auto; }
+  .weather-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .weather-row .w-city {
+    font-size: 0.72rem;
+    color: var(--text-muted);
+    width: 36px;
+    flex-shrink: 0;
+    letter-spacing: 0.03em;
+  }
+  .weather-row .w-icon { font-size: 1rem; }
+  .weather-row .w-temp { font-family: var(--font-mono); font-size: 0.9rem; font-weight: 600; color: var(--green); }
+  .weather-row .w-feels { font-family: var(--font-mono); font-size: 0.7rem; color: var(--text-muted); }
+  .weather-row .w-desc { font-size: 0.74rem; color: var(--text-secondary); margin-left: auto; }
 
   /* Stagger animation */
   @keyframes fadeUp {
@@ -606,9 +619,20 @@
       </div>
 
       <div class="weather-mini" id="weatherMini">
-        <span class="w-icon">&#9728;</span>
-        <span class="w-temp" id="wTemp">--°</span>
-        <span class="w-desc" id="wDesc">加载中</span>
+        <div class="weather-row">
+          <span class="w-city">福州</span>
+          <span class="w-icon" id="wIconFZ">&#9728;</span>
+          <span class="w-temp" id="wTempFZ">--°</span>
+          <span class="w-feels" id="wFeelsFZ">体感--°</span>
+          <span class="w-desc" id="wDescFZ">加载中</span>
+        </div>
+        <div class="weather-row">
+          <span class="w-city">平潭</span>
+          <span class="w-icon" id="wIconPT">&#9728;</span>
+          <span class="w-temp" id="wTempPT">--°</span>
+          <span class="w-feels" id="wFeelsPT">体感--°</span>
+          <span class="w-desc" id="wDescPT">加载中</span>
+        </div>
       </div>
 
       <div class="feed-list">
@@ -673,26 +697,40 @@ updateClock();
 setInterval(updateClock, 10000);
 
 // ── Weather ──
-async function fetchWeather() {
+async function fetchCityWeather(city, idTemp, idFeels, idDesc, idIcon) {
   try {
-    const resp = await fetch('https://wttr.in/Fuzhou?format=j1');
+    const resp = await fetch(`https://wttr.in/${encodeURIComponent(city)}?format=j1`);
     const data = await resp.json();
     const curr = data.current_condition[0];
     const temp = curr.temp_C;
+    const feels = curr.FeelsLikeC;
     const desc = curr.lang_zh ? curr.lang_zh[0].value : curr.weatherDesc[0].value;
 
-    document.getElementById('wTemp').textContent = temp + '°C';
-    document.getElementById('wDesc').textContent = desc;
-    document.getElementById('weatherLine').textContent = `福州 ${temp}°C ${desc}`;
+    document.getElementById(idTemp).textContent = temp + '°C';
+    document.getElementById(idFeels).textContent = '体感' + feels + '°';
+    document.getElementById(idDesc).textContent = desc;
 
     const icons = { '晴': '☀', '多云': '⛅', '阴': '☁', '雨': '🌧', '雪': '❄', '雾': '🌫' };
     const icon = Object.entries(icons).find(([k]) => desc.includes(k));
-    document.querySelector('#weatherMini .w-icon').textContent = icon ? icon[1] : '🌤';
+    document.getElementById(idIcon).textContent = icon ? icon[1] : '🌤';
+
+    return { temp, feels, desc };
   } catch {
-    document.getElementById('weatherLine').textContent = '福州 · 天气获取失败';
-    document.getElementById('wTemp').textContent = '--°';
-    document.getElementById('wDesc').textContent = '离线';
+    document.getElementById(idTemp).textContent = '--°';
+    document.getElementById(idFeels).textContent = '体感--°';
+    document.getElementById(idDesc).textContent = '离线';
+    return null;
   }
+}
+
+async function fetchWeather() {
+  const [fz, pt] = await Promise.all([
+    fetchCityWeather('Fuzhou', 'wTempFZ', 'wFeelsFZ', 'wDescFZ', 'wIconFZ'),
+    fetchCityWeather('Pingtan', 'wTempPT', 'wFeelsPT', 'wDescPT', 'wIconPT'),
+  ]);
+  const fzStr = fz ? `福州 ${fz.temp}° (体感${fz.feels}°) ${fz.desc}` : '福州 · 离线';
+  const ptStr = pt ? `平潭 ${pt.temp}° (体感${pt.feels}°) ${pt.desc}` : '平潭 · 离线';
+  document.getElementById('weatherLine').textContent = `${fzStr}  |  ${ptStr}`;
 }
 fetchWeather();
 
