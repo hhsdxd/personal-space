@@ -1,0 +1,647 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>香肠的个人空间</title>
+<style>
+  :root {
+    --bg-deep: #0a0a0c;
+    --bg-card: #111114;
+    --bg-card-hover: #18181d;
+    --border: #222226;
+    --border-glow: #2a2a30;
+    --text-primary: #e8e8ed;
+    --text-secondary: #8b8b96;
+    --text-muted: #5c5c66;
+    --amber: #f0a040;
+    --amber-dim: #b87820;
+    --cyan: #3ac8c8;
+    --cyan-dim: #1a7070;
+    --rose: #e05870;
+    --rose-dim: #8a3040;
+    --green: #48c878;
+    --green-dim: #1a6040;
+    --radius: 14px;
+    --radius-sm: 8px;
+    --font-display: 'Georgia', 'Noto Serif SC', 'STSong', 'SimSun', serif;
+    --font-body: -apple-system, BlinkMacSystemFont, 'PingFang SC', 'Microsoft YaHei', sans-serif;
+    --font-mono: 'JetBrains Mono', 'Fira Code', 'Cascadia Code', 'Consolas', monospace;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    background: var(--bg-deep);
+    color: var(--text-primary);
+    font-family: var(--font-body);
+    min-height: 100vh;
+    overflow-x: hidden;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  /* Ambient background */
+  .bg-layer {
+    position: fixed;
+    inset: 0;
+    pointer-events: none;
+    z-index: 0;
+  }
+  .bg-layer::before {
+    content: '';
+    position: absolute;
+    top: -40%;
+    left: -20%;
+    width: 80%;
+    height: 120%;
+    background: radial-gradient(ellipse at center, rgba(240,160,64,0.04) 0%, transparent 70%);
+  }
+  .bg-layer::after {
+    content: '';
+    position: absolute;
+    bottom: -30%;
+    right: -15%;
+    width: 70%;
+    height: 100%;
+    background: radial-gradient(ellipse at center, rgba(58,200,200,0.03) 0%, transparent 70%);
+  }
+  .bg-grid {
+    position: fixed;
+    inset: 0;
+    pointer-events: none;
+    z-index: 0;
+    background-image:
+      linear-gradient(rgba(255,255,255,0.015) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(255,255,255,0.015) 1px, transparent 1px);
+    background-size: 48px 48px;
+    mask-image: radial-gradient(ellipse 70% 70% at 50% 30%, black 30%, transparent 70%);
+  }
+
+  /* Main container */
+  .main {
+    position: relative;
+    z-index: 1;
+    max-width: 1200px;
+    margin: 0 auto;
+    padding: 32px 24px 80px;
+    display: flex;
+    flex-direction: column;
+    gap: 28px;
+  }
+
+  /* Header */
+  .header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-end;
+    padding: 12px 0;
+  }
+  .header-left h1 {
+    font-family: var(--font-display);
+    font-size: 2rem;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    color: var(--text-primary);
+    line-height: 1.1;
+  }
+  .header-left .subtitle {
+    font-size: 0.82rem;
+    color: var(--text-muted);
+    margin-top: 4px;
+    letter-spacing: 0.05em;
+  }
+  .header-right {
+    text-align: right;
+  }
+  .header-right .time {
+    font-family: var(--font-mono);
+    font-size: 1.6rem;
+    font-weight: 600;
+    color: var(--text-primary);
+    letter-spacing: 0.02em;
+  }
+  .header-right .date-str {
+    font-size: 0.8rem;
+    color: var(--text-muted);
+    margin-top: 2px;
+  }
+  .header-right .weather {
+    font-size: 0.78rem;
+    color: var(--text-secondary);
+    margin-top: 4px;
+  }
+
+  /* Section titles */
+  .section-title {
+    font-family: var(--font-display);
+    font-size: 1.05rem;
+    font-weight: 700;
+    color: var(--text-primary);
+    letter-spacing: 0.06em;
+    margin-bottom: 14px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  .section-title .dot {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    display: inline-block;
+  }
+  .dot-tools { background: var(--cyan); box-shadow: 0 0 8px var(--cyan); }
+  .dot-fitness { background: var(--amber); box-shadow: 0 0 8px var(--amber); }
+  .dot-info { background: var(--green); box-shadow: 0 0 8px var(--green); }
+
+  /* Grid layout */
+  .grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr;
+    gap: 20px;
+  }
+
+  /* Card base */
+  .card {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 24px;
+    transition: all 0.3s cubic-bezier(0.22, 0.61, 0.36, 1);
+    position: relative;
+    overflow: hidden;
+  }
+  .card::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 1px;
+    background: linear-gradient(90deg, transparent, rgba(255,255,255,0.06), transparent);
+    opacity: 0;
+    transition: opacity 0.3s;
+  }
+  .card:hover {
+    background: var(--bg-card-hover);
+    border-color: var(--border-glow);
+    transform: translateY(-2px);
+    box-shadow: 0 8px 32px rgba(0,0,0,0.4);
+  }
+  .card:hover::before { opacity: 1; }
+
+  /* Tool links */
+  .tool-group { margin-bottom: 20px; }
+  .tool-group:last-child { margin-bottom: 0; }
+  .tool-group-label {
+    font-size: 0.7rem;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    color: var(--text-muted);
+    margin-bottom: 10px;
+    font-weight: 600;
+  }
+  .tool-links {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+  .tool-link {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 7px 14px;
+    background: rgba(255,255,255,0.03);
+    border: 1px solid var(--border);
+    border-radius: 20px;
+    color: var(--text-secondary);
+    text-decoration: none;
+    font-size: 0.82rem;
+    transition: all 0.25s;
+    white-space: nowrap;
+  }
+  .tool-link:hover {
+    background: rgba(58,200,200,0.1);
+    border-color: var(--cyan-dim);
+    color: var(--cyan);
+    transform: translateY(-1px);
+    box-shadow: 0 4px 12px rgba(58,200,200,0.08);
+  }
+  .tool-link .icon { font-size: 0.95rem; }
+
+
+  /* Info feed */
+  .feed-list {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+  .feed-item {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 11px 14px;
+    border-radius: var(--radius-sm);
+    text-decoration: none;
+    color: var(--text-secondary);
+    transition: all 0.25s;
+  }
+  .feed-item:hover {
+    background: rgba(72,200,120,0.06);
+    color: var(--text-primary);
+  }
+  .feed-item .feed-icon {
+    width: 36px;
+    height: 36px;
+    border-radius: 10px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.1rem;
+    flex-shrink: 0;
+  }
+  .feed-icon-juejin { background: rgba(58,150,255,0.15); color: #3a96ff; }
+  .feed-icon-xiaoheihe { background: rgba(120,140,255,0.15); color: #788cff; }
+  .feed-icon-douyin { background: rgba(255,50,100,0.12); color: #ff3264; }
+  .feed-icon-bilibili { background: rgba(255,120,160,0.12); color: #fb7299; }
+  .feed-icon-zhihu { background: rgba(0,120,255,0.12); color: #0078ff; }
+  .feed-item .feed-name { font-size: 0.85rem; font-weight: 500; }
+  .feed-item .feed-desc { font-size: 0.72rem; color: var(--text-muted); }
+  .feed-item .feed-arrow {
+    margin-left: auto;
+    color: var(--text-muted);
+    font-size: 0.7rem;
+    transition: transform 0.2s;
+  }
+  .feed-item:hover .feed-arrow { transform: translateX(3px); color: var(--green); }
+
+  /* Weather preview inline */
+  .weather-mini {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 12px 16px;
+    background: rgba(72,200,120,0.04);
+    border: 1px solid rgba(72,200,120,0.1);
+    border-radius: var(--radius-sm);
+    margin-bottom: 16px;
+  }
+  .weather-mini .w-icon { font-size: 1.4rem; }
+  .weather-mini .w-temp { font-family: var(--font-mono); font-size: 1.2rem; font-weight: 600; color: var(--green); }
+  .weather-mini .w-desc { font-size: 0.78rem; color: var(--text-muted); margin-left: auto; }
+
+  /* Stagger animation */
+  @keyframes fadeUp {
+    from { opacity: 0; transform: translateY(24px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+  .animate-in {
+    animation: fadeUp 0.6s cubic-bezier(0.22, 0.61, 0.36, 1) both;
+  }
+  .card:nth-child(1) { animation-delay: 0.05s; }
+  .card:nth-child(2) { animation-delay: 0.15s; }
+  .card:nth-child(3) { animation-delay: 0.25s; }
+
+  /* Search */
+  .search-wrap {
+    display: flex;
+    gap: 8px;
+    margin-bottom: 20px;
+  }
+  .search-input {
+    flex: 1;
+    padding: 11px 16px;
+    background: rgba(255,255,255,0.04);
+    border: 1px solid var(--border);
+    border-radius: 24px;
+    color: var(--text-primary);
+    font-size: 0.85rem;
+    font-family: var(--font-body);
+    outline: none;
+    transition: all 0.3s;
+  }
+  .search-input:focus {
+    border-color: var(--cyan-dim);
+    background: rgba(58,200,200,0.06);
+    box-shadow: 0 0 0 3px rgba(58,200,200,0.06);
+  }
+  .search-input::placeholder { color: var(--text-muted); }
+  .search-engine {
+    padding: 0 6px;
+    background: rgba(255,255,255,0.03);
+    border: 1px solid var(--border);
+    border-radius: 24px;
+    color: var(--text-secondary);
+    font-size: 0.78rem;
+    font-family: var(--font-body);
+    outline: none;
+    cursor: pointer;
+    transition: all 0.25s;
+  }
+  .search-engine:focus { border-color: var(--cyan-dim); }
+  .search-engine option { background: var(--bg-card); color: var(--text-primary); }
+  .search-btn {
+    padding: 11px 20px;
+    background: var(--cyan-dim);
+    border: none;
+    border-radius: 24px;
+    color: #fff;
+    font-size: 0.82rem;
+    font-weight: 600;
+    cursor: pointer;
+    letter-spacing: 0.04em;
+    font-family: var(--font-body);
+    transition: all 0.25s;
+    white-space: nowrap;
+  }
+  .search-btn:hover {
+    background: var(--cyan);
+    box-shadow: 0 4px 16px rgba(58,200,200,0.2);
+  }
+  .search-tags {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+  .search-tag {
+    font-size: 0.74rem;
+    color: var(--text-muted);
+    text-decoration: none;
+    padding: 4px 12px;
+    border-radius: 14px;
+    background: rgba(255,255,255,0.02);
+    border: 1px solid var(--border);
+    transition: all 0.2s;
+  }
+  .search-tag:hover {
+    color: var(--text-primary);
+    border-color: var(--border-glow);
+    background: rgba(255,255,255,0.05);
+  }
+
+  /* Quote */
+  .quote-block {
+    text-align: center;
+    padding: 10px 0 0;
+    border-top: 1px solid var(--border);
+  }
+  .quote-text {
+    font-family: var(--font-display);
+    font-size: 0.88rem;
+    color: var(--text-secondary);
+    font-style: italic;
+    letter-spacing: 0.03em;
+  }
+  .quote-author {
+    font-size: 0.72rem;
+    color: var(--text-muted);
+    margin-top: 4px;
+  }
+
+
+  /* Responsive */
+  @media (max-width: 900px) {
+    .grid { grid-template-columns: 1fr; }
+    .header { flex-direction: column; align-items: flex-start; gap: 12px; }
+    .header-right { text-align: left; }
+  }
+
+  /* Custom scrollbar */
+  ::-webkit-scrollbar { width: 5px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+  ::-webkit-scrollbar-thumb:hover { background: var(--border-glow); }
+</style>
+</head>
+<body>
+
+<div class="bg-layer"></div>
+<div class="bg-grid"></div>
+
+<main class="main">
+  <!-- Header -->
+  <header class="header animate-in">
+    <div class="header-left">
+      <h1>香肠的个人空间</h1>
+      <div class="subtitle">工具 · 信息</div>
+    </div>
+    <div class="header-right">
+      <div class="time" id="clock">--:--</div>
+      <div class="date-str" id="dateStr">----年--月--日 周-</div>
+      <div class="weather" id="weatherLine">加载中...</div>
+    </div>
+  </header>
+
+  <!-- Three-column grid -->
+  <div class="grid">
+    <!-- Column 1: Tools -->
+    <div class="card animate-in">
+      <div class="section-title">
+        <span class="dot dot-tools"></span> 工具面板
+      </div>
+
+      <div class="tool-group">
+        <div class="tool-group-label">AI 工具</div>
+        <div class="tool-links">
+          <a href="https://claude.ai" class="tool-link" target="_blank">
+            <span class="icon">&#9672;</span>Claude
+          </a>
+          <a href="https://chat.openai.com" class="tool-link" target="_blank">
+            <span class="icon">&#9676;</span>ChatGPT
+          </a>
+          <a href="https://modelscope.cn" class="tool-link" target="_blank">
+            <span class="icon">&#9702;</span>ModelScope
+          </a>
+          <a href="https://gemini.google.com" class="tool-link" target="_blank">
+            <span class="icon">&#9673;</span>Gemini
+          </a>
+        </div>
+      </div>
+
+      <div class="tool-group">
+        <div class="tool-group-label">开发资源</div>
+        <div class="tool-links">
+          <a href="https://github.com" class="tool-link" target="_blank">
+            <span class="icon">&#9678;</span>GitHub
+          </a>
+          <a href="https://stackoverflow.com" class="tool-link" target="_blank">
+            <span class="icon">&#9644;</span>Stack Overflow
+          </a>
+          <a href="https://www.npmjs.com" class="tool-link" target="_blank">
+            <span class="icon">&#9660;</span>npm
+          </a>
+          <a href="https://hub.docker.com" class="tool-link" target="_blank">
+            <span class="icon">&#9638;</span>Docker Hub
+          </a>
+        </div>
+      </div>
+
+      <div class="tool-group">
+        <div class="tool-group-label">快捷入口</div>
+        <div class="tool-links">
+          <a href="https://github.com" class="tool-link" target="_blank">
+            <span class="icon">&#9678;</span>GitHub
+          </a>
+          <a href="https://juejin.cn" class="tool-link" target="_blank">
+            <span class="icon">&#9733;</span>掘金
+          </a>
+        </div>
+      </div>
+    </div>
+
+    <!-- Column 2: Search -->
+    <div class="card animate-in">
+      <div class="section-title">
+        <span class="dot dot-fitness"></span> 搜索
+      </div>
+
+      <div class="search-wrap">
+        <input type="text" class="search-input" id="searchInput" placeholder="输入关键词搜索..." onkeydown="if(event.key==='Enter')doSearch()">
+        <select class="search-engine" id="searchEngine">
+          <option value="baidu">百度</option>
+          <option value="google">Google</option>
+          <option value="bilibili">B站</option>
+          <option value="zhihu">知乎</option>
+          <option value="github">GitHub</option>
+        </select>
+        <button class="search-btn" onclick="doSearch()">搜索</button>
+      </div>
+
+      <div class="search-tags">
+        <a href="https://www.bilibili.com" class="search-tag" target="_blank">B站</a>
+        <a href="https://www.zhihu.com" class="search-tag" target="_blank">知乎</a>
+        <a href="https://juejin.cn" class="search-tag" target="_blank">掘金</a>
+        <a href="https://github.com" class="search-tag" target="_blank">GitHub</a>
+        <a href="https://www.douyin.com" class="search-tag" target="_blank">抖音</a>
+        <a href="https://xiaoheihe.cn" class="search-tag" target="_blank">小黑盒</a>
+      </div>
+
+      <div class="quote-block" style="margin-top:20px; padding-top:14px;">
+        <div class="quote-text" id="quoteText">加载中...</div>
+        <div class="quote-author" id="quoteAuthor"></div>
+      </div>
+    </div>
+
+    <!-- Column 3: Info Feed -->
+    <div class="card animate-in">
+      <div class="section-title">
+        <span class="dot dot-info"></span> 信息速览
+      </div>
+
+      <div class="weather-mini" id="weatherMini">
+        <span class="w-icon">&#9728;</span>
+        <span class="w-temp" id="wTemp">--°</span>
+        <span class="w-desc" id="wDesc">加载中</span>
+      </div>
+
+      <div class="feed-list">
+        <a href="https://juejin.cn" class="feed-item" target="_blank">
+          <span class="feed-icon feed-icon-juejin">&#9733;</span>
+          <span class="feed-name">掘金</span>
+          <span class="feed-desc">开发者社区</span>
+          <span class="feed-arrow">&#8594;</span>
+        </a>
+        <a href="https://xiaoheihe.cn" class="feed-item" target="_blank">
+          <span class="feed-icon feed-icon-xiaoheihe">&#9830;</span>
+          <span class="feed-name">小黑盒</span>
+          <span class="feed-desc">游戏社区</span>
+          <span class="feed-arrow">&#8594;</span>
+        </a>
+        <a href="https://www.douyin.com" class="feed-item" target="_blank">
+          <span class="feed-icon feed-icon-douyin">&#9834;</span>
+          <span class="feed-name">抖音</span>
+          <span class="feed-desc">短视频</span>
+          <span class="feed-arrow">&#8594;</span>
+        </a>
+        <a href="https://www.bilibili.com" class="feed-item" target="_blank">
+          <span class="feed-icon feed-icon-bilibili">&#9655;</span>
+          <span class="feed-name">哔哩哔哩</span>
+          <span class="feed-desc">视频平台</span>
+          <span class="feed-arrow">&#8594;</span>
+        </a>
+        <a href="https://www.zhihu.com" class="feed-item" target="_blank">
+          <span class="feed-icon feed-icon-zhihu">&#9731;</span>
+          <span class="feed-name">知乎</span>
+          <span class="feed-desc">问答社区</span>
+          <span class="feed-arrow">&#8594;</span>
+        </a>
+      </div>
+    </div>
+  </div>
+</main>
+
+<script>
+// ── Clock ──
+function updateClock() {
+  const now = new Date();
+  document.getElementById('clock').textContent =
+    now.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' });
+
+  const days = ['日', '一', '二', '三', '四', '五', '六'];
+  document.getElementById('dateStr').textContent =
+    `${now.getFullYear()}年${String(now.getMonth()+1).padStart(2,'0')}月${String(now.getDate()).padStart(2,'0')}日 周${days[now.getDay()]}`;
+}
+updateClock();
+setInterval(updateClock, 10000);
+
+// ── Weather ──
+async function fetchWeather() {
+  try {
+    const resp = await fetch('https://wttr.in/Fuzhou?format=j1');
+    const data = await resp.json();
+    const curr = data.current_condition[0];
+    const temp = curr.temp_C;
+    const desc = curr.lang_zh ? curr.lang_zh[0].value : curr.weatherDesc[0].value;
+
+    document.getElementById('wTemp').textContent = temp + '°C';
+    document.getElementById('wDesc').textContent = desc;
+    document.getElementById('weatherLine').textContent = `福州 ${temp}°C ${desc}`;
+
+    const icons = { '晴': '☀', '多云': '⛅', '阴': '☁', '雨': '🌧', '雪': '❄', '雾': '🌫' };
+    const icon = Object.entries(icons).find(([k]) => desc.includes(k));
+    document.querySelector('#weatherMini .w-icon').textContent = icon ? icon[1] : '🌤';
+  } catch {
+    document.getElementById('weatherLine').textContent = '福州 · 天气获取失败';
+    document.getElementById('wTemp').textContent = '--°';
+    document.getElementById('wDesc').textContent = '离线';
+  }
+}
+fetchWeather();
+
+// ── Search ──
+function doSearch() {
+  const query = encodeURIComponent(document.getElementById('searchInput').value.trim());
+  if (!query) return;
+  const engine = document.getElementById('searchEngine').value;
+  const urls = {
+    baidu: `https://www.baidu.com/s?wd=${query}`,
+    google: `https://www.google.com/search?q=${query}`,
+    bilibili: `https://search.bilibili.com/all?keyword=${query}`,
+    zhihu: `https://www.zhihu.com/search?type=content&q=${query}`,
+    github: `https://github.com/search?q=${query}`,
+  };
+  window.open(urls[engine] || urls.baidu, '_blank');
+}
+
+// ── Daily Quote ──
+const quotes = [
+  { text: '简单的事情重复做，你就是专家。', author: '佚名' },
+  { text: '代码是写给人看的，顺便能在机器上运行。', author: 'Harold Abelson' },
+  { text: 'Stay hungry, stay foolish.', author: 'Steve Jobs' },
+  { text: '不要重复造轮子，但要知道轮子怎么造。', author: '程序员守则' },
+  { text: 'Talk is cheap. Show me the code.', author: 'Linus Torvalds' },
+  { text: '你不需要很厉害才能开始，但你需要开始才能很厉害。', author: '佚名' },
+  { text: 'First, solve the problem. Then, write the code.', author: 'John Johnson' },
+  { text: '今天的努力，明天的实力。', author: '佚名' },
+  { text: 'The only way to do great work is to love what you do.', author: 'Steve Jobs' },
+  { text: '调试比写代码难两倍，所以写得聪明的人，按定义来说，调试能力不够。', author: 'Brian Kernighan' },
+];
+function showQuote() {
+  const q = quotes[Math.floor(Math.random() * quotes.length)];
+  document.getElementById('quoteText').textContent = `"${q.text}"`;
+  document.getElementById('quoteAuthor').textContent = `— ${q.author}`;
+}
+showQuote();
+</script>
+
+</body>
+</html>
