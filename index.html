@@ -397,6 +397,85 @@
     margin-top: 4px;
   }
 
+  /* Todo */
+  .todo-wrap { margin-top: 16px; padding-top: 14px; border-top: 1px solid var(--border); }
+  .todo-title {
+    font-size: 0.7rem;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    color: var(--text-muted);
+    font-weight: 600;
+    margin-bottom: 10px;
+  }
+  .todo-item {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 7px 0;
+    cursor: pointer;
+    transition: all 0.2s;
+  }
+  .todo-item:hover .todo-check { border-color: var(--rose-dim); }
+  .todo-check {
+    width: 18px;
+    height: 18px;
+    border-radius: 50%;
+    border: 2px solid var(--border);
+    flex-shrink: 0;
+    transition: all 0.25s;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.55rem;
+    color: transparent;
+  }
+  .todo-item.done .todo-check {
+    background: var(--rose-dim);
+    border-color: var(--rose-dim);
+    color: #fff;
+  }
+  .todo-item.done .todo-text {
+    text-decoration: line-through;
+    color: var(--text-muted);
+  }
+  .todo-text {
+    font-size: 0.82rem;
+    color: var(--text-secondary);
+    transition: color 0.25s;
+  }
+  .todo-input-row {
+    display: flex;
+    gap: 6px;
+    margin-top: 8px;
+  }
+  .todo-input-row input {
+    flex: 1;
+    padding: 7px 12px;
+    background: rgba(255,255,255,0.03);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    color: var(--text-primary);
+    font-size: 0.78rem;
+    font-family: var(--font-body);
+    outline: none;
+    transition: all 0.25s;
+  }
+  .todo-input-row input:focus { border-color: var(--rose-dim); background: rgba(224,88,112,0.04); }
+  .todo-input-row input::placeholder { color: var(--text-muted); font-size: 0.75rem; }
+  .todo-input-row .btn-sm {
+    padding: 7px 14px;
+    background: rgba(255,255,255,0.05);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    color: var(--text-secondary);
+    font-size: 0.75rem;
+    cursor: pointer;
+    font-family: var(--font-body);
+    transition: all 0.25s;
+    white-space: nowrap;
+  }
+  .todo-input-row .btn-sm:hover { background: var(--rose-dim); border-color: var(--rose-dim); color: #fff; }
+
 
   /* Responsive */
   @media (max-width: 900px) {
@@ -422,7 +501,7 @@
   <header class="header animate-in">
     <div class="header-left">
       <h1>香肠的个人空间</h1>
-      <div class="subtitle">工具 · 信息</div>
+      <div class="subtitle" id="greeting">下午好，香肠</div>
     </div>
     <div class="header-right">
       <div class="time" id="clock">--:--</div>
@@ -565,11 +644,28 @@
           <span class="feed-arrow">&#8594;</span>
         </a>
       </div>
+
+      <div class="todo-wrap">
+        <div class="todo-title">今日待办</div>
+        <div id="todoList"></div>
+        <div class="todo-input-row">
+          <input type="text" id="todoInput" placeholder="添加待办..." onkeydown="if(event.key==='Enter')addTodo()">
+          <button class="btn-sm" onclick="addTodo()">添加</button>
+        </div>
+      </div>
     </div>
   </div>
 </main>
 
 <script>
+// ── Greeting ──
+function updateGreeting() {
+  const h = new Date().getHours();
+  const g = h < 6 ? '凌晨好' : h < 12 ? '上午好' : h < 14 ? '中午好' : h < 18 ? '下午好' : '晚上好';
+  document.getElementById('greeting').textContent = g + '，香肠';
+}
+updateGreeting();
+
 // ── Clock ──
 function updateClock() {
   const now = new Date();
@@ -641,6 +737,40 @@ function showQuote() {
   document.getElementById('quoteAuthor').textContent = `— ${q.author}`;
 }
 showQuote();
+
+// ── Todo ──
+function loadTodos() {
+  const todos = JSON.parse(localStorage.getItem('todos') || '[]');
+  const list = document.getElementById('todoList');
+  list.innerHTML = todos.map((t, i) => `
+    <div class="todo-item${t.done ? ' done' : ''}" onclick="toggleTodo(${i})" title="点击切换状态">
+      <span class="todo-check">&#10003;</span>
+      <span class="todo-text">${escapeHtml(t.text)}</span>
+    </div>
+  `).join('');
+}
+function addTodo() {
+  const input = document.getElementById('todoInput');
+  const text = input.value.trim();
+  if (!text || text.length > 40) return;
+  const todos = JSON.parse(localStorage.getItem('todos') || '[]');
+  todos.push({ text, done: false });
+  localStorage.setItem('todos', JSON.stringify(todos));
+  input.value = '';
+  loadTodos();
+}
+function toggleTodo(i) {
+  const todos = JSON.parse(localStorage.getItem('todos') || '[]');
+  if (todos[i]) todos[i].done = !todos[i].done;
+  localStorage.setItem('todos', JSON.stringify(todos));
+  loadTodos();
+}
+function escapeHtml(s) {
+  const d = document.createElement('div');
+  d.textContent = s;
+  return d.innerHTML;
+}
+loadTodos();
 </script>
 
 </body>
