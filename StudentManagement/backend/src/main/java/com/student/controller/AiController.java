@@ -3,12 +3,14 @@ package com.student.controller;
 import com.student.ai.AiService;
 import com.student.dto.ApiResponse;
 import org.springframework.web.bind.annotation.*;
+import io.swagger.v3.oas.annotations.tags.Tag;
 
 import java.util.HashMap;
 import java.util.Map;
 
 @RestController
 @RequestMapping("/api/ai")
+@Tag(name = "Ai")
 public class AiController {
 
     private final AiService aiService;

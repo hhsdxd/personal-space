@@ -4,9 +4,11 @@ import com.student.dto.ApiResponse;
 import com.student.entity.Student;
 import com.student.service.StudentService;
 import org.springframework.web.bind.annotation.*;
+import io.swagger.v3.oas.annotations.tags.Tag;
 
 @RestController
 @RequestMapping("/api/students")
+@Tag(name = "Student")
 public class StudentController {
 
     private final StudentService studentService;

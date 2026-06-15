@@ -3,15 +3,18 @@ package com.ai.controller;
 import com.ai.service.AiChatService;
 import org.springframework.http.MediaType;
 import org.springframework.web.bind.annotation.*;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import reactor.core.publisher.Flux;
 
 import java.util.Map;
+import java.util.HashMap;
 
 /**
  * AI 对话 REST API
  */
 @RestController
 @RequestMapping("/api/ai")
+@Tag(name = "AI对话")
 public class AiChatController {
 
     private final AiChatService aiChatService;
@@ -47,7 +50,7 @@ public class AiChatController {
     @DeleteMapping("/session/{sessionId}")
     public Map<String, Object> clearSession(@PathVariable String sessionId) {
         aiChatService.clearSession(sessionId);
-        return Map.of("success", true, "message", "会话已清除");
+        Map<String, Object> r1 = new HashMap<>(); r1.put("success", true); r1.put("message", "会话已清除"); return r1;
     }
 
     /**
@@ -55,6 +58,6 @@ public class AiChatController {
      */
     @GetMapping("/health")
     public Map<String, Object> health() {
-        return Map.of("status", "ok", "contexts", aiChatService.getContexts());
+        Map<String, Object> r2 = new HashMap<>(); r2.put("status", "ok"); r2.put("contexts", aiChatService.getContexts()); return r2;
     }
 }

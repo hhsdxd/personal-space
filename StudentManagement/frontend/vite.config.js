@@ -7,6 +7,10 @@ export default defineConfig({
     port: 3000,
     open: true,
     proxy: {
+      '/api/ai': {
+        target: 'http://localhost:8082',
+        changeOrigin: true
+      },
       '/api': {
         target: 'http://localhost:8080',
         changeOrigin: true

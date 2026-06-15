@@ -5,11 +5,13 @@ import com.student.dto.LoginRequest;
 import com.student.dto.RegisterRequest;
 import com.student.service.UserService;
 import org.springframework.web.bind.annotation.*;
+import io.swagger.v3.oas.annotations.tags.Tag;
 
 import javax.validation.Valid;
 
 @RestController
 @RequestMapping("/api/auth")
+@Tag(name = "Auth")
 public class AuthController {
 
     private final UserService userService;

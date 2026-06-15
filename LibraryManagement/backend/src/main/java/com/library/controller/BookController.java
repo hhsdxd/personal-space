@@ -4,9 +4,11 @@ import com.library.dto.ApiResponse;
 import com.library.entity.Book;
 import com.library.service.BookService;
 import org.springframework.web.bind.annotation.*;
+import io.swagger.v3.oas.annotations.tags.Tag;
 
 @RestController
 @RequestMapping("/api/books")
+@Tag(name = "Book")
 public class BookController {
 
     private final BookService bookService;

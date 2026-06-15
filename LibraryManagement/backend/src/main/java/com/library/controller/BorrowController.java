@@ -5,9 +5,11 @@ import com.library.entity.User;
 import com.library.service.BorrowService;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
+import io.swagger.v3.oas.annotations.tags.Tag;
 
 @RestController
 @RequestMapping("/api/borrow")
+@Tag(name = "Borrow")
 public class BorrowController {
 
     private final BorrowService borrowService;

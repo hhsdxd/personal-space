@@ -18,8 +18,8 @@ public class AiService {
     private final String model;
     private final StudentRepository studentRepository;
 
-    public AiService(@Value("${ai.dashscope.api-key}") String apiKey,
-                     @Value("${ai.dashscope.model}") String model,
+    public AiService(@Value("${ai.dashscope.api-key:}") String apiKey,
+                     @Value("${ai.dashscope.model:qwen-plus}") String model,
                      StudentRepository studentRepository) {
         this.apiKey = apiKey;
         this.model = model;
