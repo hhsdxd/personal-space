@@ -1,0 +1,580 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>手势粒子 — 1 2 3 天天开心</title>
+<style>
+  *{margin:0;padding:0;box-sizing:border-box}
+  body{background:#000;overflow:hidden;font-family:'Segoe UI',system-ui,sans-serif;user-select:none;-webkit-user-select:none}
+  canvas{display:block}
+
+  #webcam-preview{
+    position:fixed;bottom:20px;right:20px;width:160px;height:120px;
+    border-radius:12px;border:2px solid rgba(255,255,255,.1);
+    object-fit:cover;transform:scaleX(-1);opacity:.75;transition:opacity .3s;
+    z-index:10;background:rgba(0,0,0,.5);
+  }
+  #webcam-preview:hover{opacity:1}
+
+  #top-bar{
+    position:fixed;top:20px;left:50%;transform:translateX(-50%);
+    display:flex;align-items:center;gap:10px;z-index:10;
+    background:rgba(0,0,0,.45);backdrop-filter:blur(12px);
+    padding:7px 18px;border-radius:32px;border:1px solid rgba(255,255,255,.06);
+  }
+  #gesture-dot{width:8px;height:8px;border-radius:50%;background:#0f8;box-shadow:0 0 7px #0f8;transition:all .25s}
+  #gesture-dot.inactive{background:#f55;box-shadow:0 0 4px #f55}
+  #gesture-dot.breathing{background:#fa0;box-shadow:0 0 7px #fa0}
+  #gesture-label{color:rgba(255,255,255,.68);font-size:12px;letter-spacing:.3px;min-width:90px;text-align:center}
+  #theme-badge{font-size:11px;font-weight:600;padding:2px 9px;border-radius:16px;letter-spacing:.3px;transition:all .4s}
+  #radius-display{color:#999;font-size:11px;font-family:'SF Mono','Consolas',monospace;min-width:44px;text-align:center}
+
+  #hint-bar{
+    position:fixed;bottom:26px;left:50%;transform:translateX(-50%);
+    display:flex;gap:16px;z-index:10;pointer-events:none;
+    color:rgba(255,255,255,.25);font-size:11px;letter-spacing:.5px;transition:opacity 1.2s;
+  }
+
+  #status-overlay{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;z-index:100;pointer-events:none}
+  #status-msg{color:rgba(255,255,255,.45);font-size:14px;letter-spacing:.6px}
+  .flash{position:fixed;inset:0;background:#fff;z-index:200;opacity:0;pointer-events:none;transition:opacity .06s}
+  .flash.active{opacity:.5}
+</style>
+</head>
+<body>
+
+<video id="webcam-preview" autoplay playsinline></video>
+<video id="input-video" style="display:none" playsinline></video>
+<div class="flash" id="flash"></div>
+
+<div id="top-bar">
+  <div id="gesture-dot"></div>
+  <span id="gesture-label">等待手势…</span>
+  <span id="theme-badge">球体</span>
+  <span id="radius-display"></span>
+</div>
+<div id="hint-bar">
+  <span>☝️1指 = ①</span><span>✌️2指 = ②</span><span>🤟3指 = ③</span>
+  <span>🖖4指 = 天天开心 🎈</span><span>🖱拖拽旋转 · ␣截图</span>
+</div>
+<div id="status-overlay"><span id="status-msg">加载手势模型…</span></div>
+
+<script type="importmap">
+{"imports":{
+  "three":"https://unpkg.com/three@0.160.0/build/three.module.js",
+  "three/addons/":"https://unpkg.com/three@0.160.0/examples/jsm/"
+}}
+</script>
+
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils@0.3/camera_utils.js" crossorigin="anonymous"></script>
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands@0.4/hands.js" crossorigin="anonymous"></script>
+
+<script type="module">
+import * as THREE from 'three';
+import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+
+// ==================== DOM ====================
+const videoPreview=document.getElementById('webcam-preview');
+const inputVideo=document.getElementById('input-video');
+const gestureDot=document.getElementById('gesture-dot');
+const gestureLabel=document.getElementById('gesture-label');
+const themeBadge=document.getElementById('theme-badge');
+const radiusDisplay=document.getElementById('radius-display');
+const statusOverlay=document.getElementById('status-overlay');
+const statusMsg=document.getElementById('status-msg');
+const hintBar=document.getElementById('hint-bar');
+const flashEl=document.getElementById('flash');
+
+// ==================== 主题 ====================
+const THEMES=[
+  {name:'球体', surfaceHue:[.54,.60], innerHue:[.56,.64], halo:'#49f', badgeBg:'#003d7a', badgeFg:'#6cf', line:'#48c'},
+  {name:'烈焰', surfaceHue:[.03,.10], innerHue:[.05,.13], halo:'#f42', badgeBg:'#5c1400', badgeFg:'#f86', line:'#c42'},
+  {name:'极光', surfaceHue:[.33,.42], innerHue:[.68,.76], halo:'#3e8', badgeBg:'#003d20', badgeFg:'#6fa', line:'#3a6'},
+  {name:'霓虹', surfaceHue:[.78,.86], innerHue:[.53,.60], halo:'#e4f', badgeBg:'#3a0050', badgeFg:'#e8f', line:'#a3c'},
+  {name:'冰霜', surfaceHue:[.56,.60], innerHue:[.54,.57], halo:'#ace', badgeBg:'#123', badgeFg:'#cdf', line:'#89b'},
+];
+let themeIdx=0, currentTheme=THEMES[0];
+
+// ==================== Three.js 场景 ====================
+const scene=new THREE.Scene();
+const camera=new THREE.PerspectiveCamera(50,innerWidth/innerHeight,.1,100);
+camera.position.set(0,.3,8);camera.lookAt(0,0,0);
+
+const renderer=new THREE.WebGLRenderer({antialias:true,alpha:true});
+renderer.setSize(innerWidth,innerHeight);
+renderer.setPixelRatio(Math.min(devicePixelRatio,2));
+renderer.toneMapping=THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure=1.1;
+document.body.appendChild(renderer.domElement);
+
+const composer=new EffectComposer(renderer);
+composer.addPass(new RenderPass(scene,camera));
+const bloomPass=new UnrealBloomPass(new THREE.Vector2(innerWidth,innerHeight),.3,.1,.4);
+composer.addPass(bloomPass);
+
+// ==================== 星空 ====================
+const starsGeo=new THREE.BufferGeometry();
+const sp=new Float32Array(400*3);
+for(let i=0;i<400;i++){sp[i*3]=(Math.random()-.5)*20;sp[i*3+1]=(Math.random()-.5)*20;sp[i*3+2]=(Math.random()-.5)*14}
+starsGeo.setAttribute('position',new THREE.BufferAttribute(sp,3));
+const stars=new THREE.Points(starsGeo,new THREE.PointsMaterial({color:0x8899cc,size:.013,transparent:true,opacity:.55,blending:THREE.AdditiveBlending,depthWrite:false}));
+scene.add(stars);
+
+// ==================== 锐利贴图 ====================
+function makeSharpTex(size){
+  const cv=document.createElement('canvas');cv.width=cv.height=size;
+  const ctx=cv.getContext('2d');const h=size/2;
+  const g=ctx.createRadialGradient(h,h,0,h,h,h);
+  g.addColorStop(0,'rgba(255,255,255,1)');g.addColorStop(.06,'rgba(255,255,255,.95)');
+  g.addColorStop(.18,'rgba(220,240,255,.55)');g.addColorStop(.35,'rgba(100,160,220,.1)');
+  g.addColorStop(.6,'rgba(30,60,120,.01)');g.addColorStop(1,'transparent');
+  ctx.fillStyle=g;ctx.fillRect(0,0,size,size);
+  return new THREE.CanvasTexture(cv);
+}
+const sharpTex=makeSharpTex(128);
+
+// ==================== 文字采样 ====================
+function sampleText(text,font,canvasW,canvasH,maxSamples,step){
+  const cv=document.createElement('canvas');cv.width=canvasW;cv.height=canvasH;
+  const ctx=cv.getContext('2d');
+  ctx.fillStyle='#fff';ctx.font=font;ctx.textAlign='center';ctx.textBaseline='middle';
+  // 双重渲染：先填充再描边，确保笔画清晰
+  ctx.fillText(text,canvasW/2,canvasH/2);
+  ctx.strokeStyle='#fff';ctx.lineWidth=3;ctx.strokeText(text,canvasW/2,canvasH/2);
+  const img=ctx.getImageData(0,0,canvasW,canvasH);
+  const pixels=[];
+  for(let y=0;y<canvasH;y+=step){
+    for(let x=0;x<canvasW;x+=step){
+      if(img.data[(y*canvasW+x)*4+3]>100)pixels.push({x,y});
+    }
+  }
+  if(pixels.length===0){
+    // 兜底：如果字体不支持，用更大范围采样
+    for(let y=0;y<canvasH;y+=2){
+      for(let x=0;x<canvasW;x+=2){
+        if(img.data[(y*canvasW+x)*4+3]>30)pixels.push({x,y});
+      }
+    }
+  }
+  if(pixels.length===0)return[];
+  if(pixels.length<=maxSamples)return pixels;
+  const sampled=[],s=Math.floor(pixels.length/maxSamples);
+  for(let i=0;i<pixels.length;i+=s)sampled.push(pixels[i]);
+  return sampled.slice(0,maxSamples);
+}
+
+function pixelsToTargets(pixels,canvasW,canvasH,worldW,worldH){
+  const arr=new Float32Array(pixels.length*3);
+  for(let i=0;i<pixels.length;i++){
+    arr[i*3]=(pixels[i].x/canvasW-.5)*worldW;
+    arr[i*3+1]=-(pixels[i].y/canvasH-.5)*worldH;
+    arr[i*3+2]=(Math.random()-.5)*.25;
+  }
+  return arr;
+}
+
+// 预生成各形状的目标位置（在 unit sphere 尺度，会被 scale 缩放）
+let sphereTargets, num1Targets, num2Targets, num3Targets, happyTargets;
+
+// ==================== 粒子系统 ====================
+const SURFACE_N=800, INNER_N=40;
+const TOTAL_N=SURFACE_N+INNER_N;
+
+const particlesGeo=new THREE.BufferGeometry();
+const posArr=new Float32Array(TOTAL_N*3);
+const colorArr=new Float32Array(TOTAL_N*3);
+const basePos=new Float32Array(TOTAL_N*3);  // 球体基准
+const targetPos=new Float32Array(TOTAL_N*3); // 当前形态目标
+const innerLight=new Float32Array(INNER_N);
+
+// Fibonacci sphere
+const GOLDEN=Math.PI*(3-Math.sqrt(5));
+for(let i=0;i<SURFACE_N;i++){
+  const y=1-(i/(SURFACE_N-1))*2,r=Math.sqrt(1-y*y),th=GOLDEN*i;
+  basePos[i*3]=Math.cos(th)*r;basePos[i*3+1]=y;basePos[i*3+2]=Math.sin(th)*r;
+}
+for(let i=0;i<INNER_N;i++){
+  const ii=SURFACE_N+i;
+  const rr=Math.cbrt(Math.random()),th=Math.random()*Math.PI*2,ph=Math.acos(2*Math.random()-1);
+  basePos[ii*3]=rr*Math.sin(ph)*Math.cos(th);basePos[ii*3+1]=rr*Math.sin(ph)*Math.sin(th);basePos[ii*3+2]=rr*Math.cos(ph);
+  innerLight[i]=.06+Math.random()*.2;
+}
+posArr.set(basePos);targetPos.set(basePos);
+particlesGeo.setAttribute('position',new THREE.BufferAttribute(posArr,3));
+
+function fillColors(tIdx,rad){
+  const thm=THEMES[tIdx];const[hMin,hMax]=thm.surfaceHue,[iMin,iMax]=thm.innerHue;
+  const bb=Math.max(0,(rad-.4)/3.1)*.25;
+  for(let i=0;i<TOTAL_N;i++){
+    const i3=i*3;
+    if(i<SURFACE_N){
+      const h=hMin+(basePos[i3+1]*.5+.5)*(hMax-hMin);
+      const l=.5+basePos[i3+1]*.2+bb;
+      const c=new THREE.Color().setHSL(h%1,.9,Math.min(.85,l));
+      colorArr[i3]=c.r;colorArr[i3+1]=c.g;colorArr[i3+2]=c.b;
+    }else{
+      const h=iMin+((i-SURFACE_N)/INNER_N)*(iMax-iMin);
+      const l=innerLight[i-SURFACE_N]+bb*.6;
+      const c=new THREE.Color().setHSL(h%1,.65,Math.min(.4,l));
+      colorArr[i3]=c.r;colorArr[i3+1]=c.g;colorArr[i3+2]=c.b;
+    }
+  }
+  particlesGeo.setAttribute('color',new THREE.BufferAttribute(colorArr,3));
+}
+fillColors(0,1.5);
+
+const particlesMat=new THREE.PointsMaterial({
+  size:.13,map:sharpTex,vertexColors:true,
+  blending:THREE.AdditiveBlending,depthWrite:false,transparent:true,opacity:.95,
+});
+const particles=new THREE.Points(particlesGeo,particlesMat);
+scene.add(particles);
+
+// 连线
+const NEIGHBORS=4,CONN_MAX=1000;
+const neighborPairs=[];
+for(let i=0;i<SURFACE_N;i++){
+  const dists=[];
+  for(let j=0;j<SURFACE_N;j++){
+    if(i===j)continue;
+    const dx=basePos[i*3]-basePos[j*3],dy=basePos[i*3+1]-basePos[j*3+1],dz=basePos[i*3+2]-basePos[j*3+2];
+    dists.push({j,dist:Math.sqrt(dx*dx+dy*dy+dz*dz)});
+  }
+  dists.sort((a,b)=>a.dist-b.dist);
+  for(let k=0;k<NEIGHBORS;k++){const j=dists[k].j;if(i<j)neighborPairs.push([i,j,dists[k].dist])}
+}
+const connGeo=new THREE.BufferGeometry();
+const connPosArr=new Float32Array(CONN_MAX*6);
+connGeo.setAttribute('position',new THREE.BufferAttribute(connPosArr,3));
+const connMat=new THREE.LineBasicMaterial({color:new THREE.Color(currentTheme.line),transparent:true,opacity:.3,depthWrite:false,blending:THREE.AdditiveBlending});
+const connLines=new THREE.LineSegments(connGeo,connMat);
+particles.add(connLines);
+
+function updateConnections(posData,threshold){
+  let seg=0;
+  for(const[i,j]of neighborPairs){
+    if(seg>=CONN_MAX)break;
+    const i3=i*3,j3=j*3;
+    const dx=posData[i3]-posData[j3],dy=posData[i3+1]-posData[j3+1],dz=posData[i3+2]-posData[j3+2];
+    if(Math.sqrt(dx*dx+dy*dy+dz*dz)<threshold){const o=seg*6;connPosArr[o]=posData[i3];connPosArr[o+1]=posData[i3+1];connPosArr[o+2]=posData[i3+2];connPosArr[o+3]=posData[j3];connPosArr[o+4]=posData[j3+1];connPosArr[o+5]=posData[j3+2];seg++}
+  }
+  for(let s=seg;s<CONN_MAX&&s<neighborPairs.length;s++){const o=s*6;connPosArr[o]=connPosArr[o+1]=connPosArr[o+2]=connPosArr[o+3]=connPosArr[o+4]=connPosArr[o+5]=0}
+  connGeo.setDrawRange(0,seg*2);connGeo.getAttribute('position').needsUpdate=true;
+  connMat.opacity=.15+(seg/neighborPairs.length)*.3;
+}
+
+// ==================== 气球系统 ====================
+const balloonGroup=new THREE.Group();scene.add(balloonGroup);
+let balloons=[];
+
+function spawnBalloons(){
+  const colors=[0xff3355,0xff6633,0xffbb00,0xff55aa,0x44dd88,0x44aaff,0xff4488,0xff9900,0xff4444,0xffaa00];
+  for(let i=0;i<20;i++){
+    const c=colors[i%colors.length];
+    const bodyGeo=new THREE.SphereGeometry(.18,12,8);
+    bodyGeo.scale(1,1.25,1);
+    const bodyMat=new THREE.MeshBasicMaterial({color:c});
+    const body=new THREE.Mesh(bodyGeo,bodyMat);
+    body.position.set((Math.random()-.5)*5.5,-4-Math.random()*2.5,(Math.random()-.5)*2.5);
+    const knotGeo=new THREE.ConeGeometry(.06,.08,6);
+    const knot=new THREE.Mesh(knotGeo,new THREE.MeshBasicMaterial({color:0xeeeeee}));
+    knot.position.y=-.22;body.add(knot);
+    const lineGeo=new THREE.BufferGeometry();
+    lineGeo.setAttribute('position',new THREE.Float32BufferAttribute([0,-.22,0,0,-1-Math.random()*.7,0],3));
+    const line=new THREE.Line(lineGeo,new THREE.LineBasicMaterial({color:0xcccccc,transparent:true,opacity:.7}));
+    body.add(line);
+
+    balloonGroup.add(body);
+    balloons.push({mesh:body,speed:.8+Math.random()*1.5,drift:(Math.random()-.5)*.8,rotSpeed:(Math.random()-.5)*.5,phase:Math.random()*Math.PI*2});
+  }
+}
+
+function updateBalloons(dt,elapsed){
+  for(const b of balloons){
+    b.mesh.position.y+=b.speed*dt;
+    b.mesh.position.x+=Math.sin(elapsed*1.8+b.phase)*b.drift*dt;
+    b.mesh.rotation.z+=b.rotSpeed*dt;
+  }
+  // 移除飞出屏幕的
+  for(let i=balloons.length-1;i>=0;i--){
+    if(balloons[i].mesh.position.y>7){balloonGroup.remove(balloons[i].mesh);balloons.splice(i,1)}
+  }
+}
+
+// ==================== 预生成文字目标 ====================
+function buildShapeTargets(text,font,w,h,step,worldW,worldH){
+  const px=sampleText(text,font,w,h,SURFACE_N+INNER_N,step);
+  const t3d=pixelsToTargets(px,w,h,worldW,worldH);
+  const full=new Float32Array(TOTAL_N*3);
+  for(let i=0;i<TOTAL_N;i++){
+    if(i<t3d.length/3){full[i*3]=t3d[i*3];full[i*3+1]=t3d[i*3+1];full[i*3+2]=t3d[i*3+2]}
+    else{full[i*3]=basePos[i%SURFACE_N*3]*.3;full[i*3+1]=basePos[i%SURFACE_N*3+1]*.3;full[i*3+2]=basePos[i%SURFACE_N*3+2]*.3}
+  }
+  return full;
+}
+
+sphereTargets=new Float32Array(basePos);
+num1Targets=buildShapeTargets('1','bold 300px Arial,sans-serif',350,450,4,3,4.5);
+num2Targets=buildShapeTargets('2','bold 300px Arial,sans-serif',350,450,4,3,4.5);
+num3Targets=buildShapeTargets('3','bold 300px Arial,sans-serif',350,450,4,3,4.5);
+happyTargets=buildShapeTargets('天天开心','bold 130px "Microsoft YaHei","SimHei","KaiTi",sans-serif',800,280,3,6.5,3.5);
+
+// ==================== 状态 ====================
+let mode='sphere'; // 'sphere'|'num1'|'num2'|'num3'|'happy'
+let targetR=1.3,currentR=1.3;
+let handDetected=false,lastHandTime=0;
+let lastFingerCount=0,fingerStableTime=0;
+const FINGER_DEBOUNCE=350;
+let breathingMode=false,breathStart=0;
+const BREATH_DELAY=2000;
+
+let targetRotY=0,targetRotX=0,currentRotY=0,currentRotX=0;
+let mouseDown=false,mouseX=0,mouseY=0,mouseActive=false,mouseActiveTime=0;
+let balloonsSpawned=false;
+
+// ==================== 获取当前形态目标 ====================
+function getShapeTargets(m){
+  switch(m){
+    case'num1':return num1Targets;
+    case'num2':return num2Targets;
+    case'num3':return num3Targets;
+    case'happy':return happyTargets;
+    default:return sphereTargets;
+  }
+}
+
+function setMode(newMode){
+  if(mode===newMode)return;
+  mode=newMode;
+  const tgt=getShapeTargets(newMode);
+  for(let i=0;i<TOTAL_N;i++){targetPos[i*3]=tgt[i*3];targetPos[i*3+1]=tgt[i*3+1];targetPos[i*3+2]=tgt[i*3+2]}
+
+  // 固定大小
+  if(newMode==='sphere'){targetR=1.3;particlesMat.size=.13}
+  else{targetR=1.05;particlesMat.size=.22}
+
+  connThreshold=(newMode==='sphere')?.22:.35;
+
+  const labels={sphere:'球体',num1:'①',num2:'②',num3:'③',happy:'🎉 天天开心'};
+  themeBadge.textContent=labels[newMode]||'球体';
+  themeBadge.style.background='rgba(255,255,255,.08)';
+  themeBadge.style.color='#fff';
+
+  if(newMode==='happy'&&!balloonsSpawned){spawnBalloons();balloonsSpawned=true}
+  if(newMode!=='happy')balloonsSpawned=false;
+
+  breathingMode=false;
+}
+let connThreshold=.22;
+
+// ==================== MediaPipe ====================
+const hands=new Hands({locateFile:f=>`https://cdn.jsdelivr.net/npm/@mediapipe/hands@0.4/${f}`});
+hands.setOptions({maxNumHands:1,modelComplexity:1,minDetectionConfidence:.7,minTrackingConfidence:.6});
+
+const camUtil=new Camera(inputVideo,{onFrame:async()=>{await hands.send({image:inputVideo})},width:640,height:480});
+inputVideo.addEventListener('loadedmetadata',()=>{videoPreview.srcObject=inputVideo.srcObject});
+camUtil.start().then(()=>{statusOverlay.style.display='none'}).catch(err=>{statusMsg.textContent='摄像头不可用 — 鼠标/触摸可控';statusMsg.style.color='rgba(255,180,100,.8)'});
+
+function fingerDist(lm,ti){const t=lm[ti],w=lm[0];return Math.sqrt((t.x-w.x)**2+(t.y-w.y)**2+((t.z||0)-(w.z||0))**2)}
+
+hands.onResults(results=>{
+  const now=performance.now();
+  if(results.multiHandLandmarks?.length>0){
+    const lm=results.multiHandLandmarks[0];
+
+    // 不再使用捏合控制大小，保持固定
+    targetRotY=(lm[9].x-.5)*4;targetRotX=(lm[9].y-.5)*2.5;
+
+    // 手指计数
+    const tips=[8,12,16,20],pips=[6,10,14,18];
+    let fingerCount=0;
+    for(let f=0;f<4;f++){if(lm[tips[f]].y<lm[pips[f]].y)fingerCount++}
+
+    if(fingerCount===lastFingerCount&&fingerCount>=1&&fingerCount<=4){
+      if(!fingerStableTime)fingerStableTime=now;
+      if(now-fingerStableTime>FINGER_DEBOUNCE){
+        const modes=['sphere','num1','num2','num3','happy'];
+        setMode(modes[fingerCount]);
+        fingerStableTime=0;
+      }
+    }else{fingerStableTime=0}
+    lastFingerCount=fingerCount;
+
+    // 5指 → 循环主题
+    const sumDist=[4,8,12,16,20].reduce((s,ti)=>s+fingerDist(lm,ti),0);
+    if(sumDist>1.5&&fingerCount>=5){
+      if(!fingerStableTime)fingerStableTime=now;
+      if(now-fingerStableTime>FINGER_DEBOUNCE){
+        setMode('sphere');
+        themeIdx=(themeIdx+1)%THEMES.length;currentTheme=THEMES[themeIdx];
+        fillColors(themeIdx,currentR);
+        connMat.color.set(currentTheme.line);
+        fingerStableTime=0;
+      }
+    }
+
+    handDetected=true;lastHandTime=now;breathingMode=false;mouseActive=false;
+    updateUI('pinch',fingerCount);
+  }else{
+    handDetected=false;lastFingerCount=0;fingerStableTime=0;
+    if((now-lastHandTime)>BREATH_DELAY&&!breathingMode&&!mouseActive&&mode==='sphere'){breathingMode=true;breathStart=now}
+    updateUI(breathingMode?'breath':'lost',0);
+  }
+});
+
+function updateUI(modeUI,fc){
+  gestureDot.classList.remove('inactive','breathing');
+  if(modeUI==='pinch'){
+    let extra='';if(fc>=1&&fc<=4)extra=` · ${['','❶','❷','❸','🎉'][fc]}`;
+    gestureLabel.textContent=`手势中${extra}`;
+  }else if(modeUI==='breath'){gestureDot.classList.add('breathing');gestureLabel.textContent='自动呼吸'}
+  else{gestureDot.classList.add('inactive');gestureLabel.textContent=breathingMode?'自动呼吸':'鼠标控制'}
+  radiusDisplay.textContent=mode==='sphere'?'球体':mode==='happy'?'开心🎈':mode==='num1'?'①':mode==='num2'?'②':mode==='num3'?'③':'';
+}
+
+// ==================== 鼠标 ====================
+renderer.domElement.addEventListener('wheel',e=>{
+  e.preventDefault();breathingMode=false;mouseActive=true;mouseActiveTime=performance.now();
+});
+renderer.domElement.addEventListener('mousedown',e=>{mouseDown=true;mouseX=e.clientX;mouseY=e.clientY;breathingMode=false;mouseActive=true;mouseActiveTime=performance.now()});
+window.addEventListener('mouseup',()=>{mouseDown=false});
+window.addEventListener('mousemove',e=>{if(!mouseDown)return;targetRotY+=(e.clientX-mouseX)*.01;targetRotX+=(e.clientY-mouseY)*.008;mouseX=e.clientX;mouseY=e.clientY;mouseActive=true;mouseActiveTime=performance.now()});
+renderer.domElement.addEventListener('touchstart',e=>{
+  if(e.touches.length===1){mouseDown=true;mouseX=e.touches[0].clientX;mouseY=e.touches[0].clientY;breathingMode=false;mouseActive=true}
+  if(e.touches.length===2){targetR=Math.max(.4,Math.min(3.5,Math.hypot(e.touches[0].clientX-e.touches[1].clientX,e.touches[0].clientY-e.touches[1].clientY)*.005));breathingMode=false;mouseActive=true}
+  e.preventDefault()},{passive:false});
+renderer.domElement.addEventListener('touchmove',e=>{
+  if(e.touches.length===1&&mouseDown){targetRotY+=(e.touches[0].clientX-mouseX)*.01;targetRotX+=(e.touches[0].clientY-mouseY)*.008;mouseX=e.touches[0].clientX;mouseY=e.touches[0].clientY}
+  if(e.touches.length===2){targetR=Math.max(.4,Math.min(3.5,Math.hypot(e.touches[0].clientX-e.touches[1].clientX,e.touches[0].clientY-e.touches[1].clientY)*.005))}
+  e.preventDefault()},{passive:false});
+renderer.domElement.addEventListener('touchend',()=>{mouseDown=false});
+
+// ==================== 键盘 ====================
+addEventListener('keydown',e=>{
+  switch(e.key){
+    case' ':e.preventDefault();renderer.domElement.toBlob(b=>{const u=URL.createObjectURL(b);const a=document.createElement('a');a.href=u;a.download=`particle_${Date.now()}.png`;a.click();URL.revokeObjectURL(u)});flashEl.classList.add('active');setTimeout(()=>flashEl.classList.remove('active'),80);break;
+    case'r':case'R':setMode('sphere');break;
+    case'f':case'F':document.fullscreenElement?document.exitFullscreen():document.body.requestFullscreen().catch(()=>{});break;
+    case'1':setMode('num1');break;
+    case'2':setMode('num2');break;
+    case'3':setMode('num3');break;
+    case'4':setMode('happy');break;
+    case'0':setMode('sphere');break;
+    case'ArrowLeft':themeIdx=(themeIdx-1+THEMES.length)%THEMES.length;currentTheme=THEMES[themeIdx];fillColors(themeIdx,currentR);connMat.color.set(currentTheme.line);break;
+    case'ArrowRight':themeIdx=(themeIdx+1)%THEMES.length;currentTheme=THEMES[themeIdx];fillColors(themeIdx,currentR);connMat.color.set(currentTheme.line);break;
+  }
+});
+
+// ==================== 动画 ====================
+const clock=new THREE.Clock();
+
+function animate(ts){
+  requestAnimationFrame(animate);
+  const dt=Math.min(clock.getDelta(),.1);
+  const elapsed=ts*.001;
+
+  if(breathingMode&&mode==='sphere'){
+    const be=(ts-breathStart)*.001;
+    targetR=1.0+Math.sin(be*.8)*.3;
+    targetRotY=Math.sin(be*.35)*2;targetRotX=Math.cos(be*.45)*.6;
+  }
+  if(mouseActive&&(performance.now()-mouseActiveTime)>2000)mouseActive=false;
+
+  // 无手时回到球体
+  if(!handDetected&&(performance.now()-lastHandTime)>4000&&mode!=='sphere'&&!mouseActive){
+    setMode('sphere');
+  }
+
+  // 半径平滑
+  currentR+=(targetR-currentR)*Math.min(9*dt,1);
+  const shapeScale=(mode==='sphere')?currentR:currentR*.8;
+  particles.scale.setScalar(shapeScale);
+
+  // 旋转
+  const isTextMode=mode!=='sphere';
+  if(handDetected||mouseActive){
+    currentRotY+=(targetRotY-currentRotY)*Math.min(isTextMode?2:5,1)*dt;
+    currentRotX+=(targetRotX-currentRotX)*Math.min(isTextMode?1.5:5,1)*dt;
+    particles.rotation.y=currentRotY;particles.rotation.x=currentRotX;
+  }else if(breathingMode){
+    currentRotY+=(targetRotY-currentRotY)*Math.min(3*dt,1);
+    currentRotX+=(targetRotX-currentRotX)*Math.min(3*dt,1);
+    particles.rotation.y=currentRotY;particles.rotation.x=currentRotX;
+  }else if(isTextMode){
+    particles.rotation.y+=dt*.15;particles.rotation.x+=dt*.04;
+  }else{
+    particles.rotation.y+=dt*.22;particles.rotation.x+=dt*.07;
+  }
+
+  // 粒子位置 morph
+  const posAttr=particlesGeo.getAttribute('position');
+  const arr=posAttr.array;
+  const morphSpeed=4.5;
+  const isText=mode!=='sphere';
+  const jitter=isText?.003:.006;
+
+  for(let i=0;i<TOTAL_N;i++){
+    const i3=i*3;
+    const tx=targetPos[i3],ty=targetPos[i3+1],tz=targetPos[i3+2];
+    arr[i3]+=(tx-arr[i3])*Math.min(morphSpeed*dt,1);
+    arr[i3+1]+=(ty-arr[i3+1])*Math.min(morphSpeed*dt,1);
+    arr[i3+2]+=(tz-arr[i3+2])*Math.min(morphSpeed*dt,1);
+    // jitter
+    arr[i3]  +=Math.sin(elapsed*3.5+i*.73)*Math.cos(elapsed*2.5+i*.37)*jitter;
+    arr[i3+1]+=Math.cos(elapsed*4.0+i*.59)*Math.sin(elapsed*3.0+i*.83)*jitter;
+    arr[i3+2]+=Math.sin(elapsed*3.8+i*.91)*Math.cos(elapsed*4.2+i*.29)*jitter;
+  }
+  posAttr.needsUpdate=true;
+
+  // 连线
+  if(mode==='sphere')updateConnections(arr,connThreshold);
+  else{connGeo.setDrawRange(0,0);connGeo.getAttribute('position').needsUpdate=true}
+
+  // 颜色
+  const bb=Math.max(0,(currentR-.4)/3.1)*.25;
+  const cAttr=particlesGeo.getAttribute('color');
+  const thm=(mode==='happy')?{surfaceHue:[.10,.18],innerHue:[.08,.14]}:THEMES[themeIdx];
+  for(let i=0;i<SURFACE_N;i++){
+    const i3=i*3;const h=thm.surfaceHue[0]+(basePos[i3+1]*.5+.5)*(thm.surfaceHue[1]-thm.surfaceHue[0]);
+    const l=.5+basePos[i3+1]*.2+bb;const c=new THREE.Color().setHSL(h%1,.9,Math.min(.85,l));
+    cAttr.array[i3]=c.r;cAttr.array[i3+1]=c.g;cAttr.array[i3+2]=c.b;
+  }
+  for(let i=0;i<INNER_N;i++){
+    const i3=(SURFACE_N+i)*3;const h=thm.innerHue[0]+(i/INNER_N)*(thm.innerHue[1]-thm.innerHue[0]);
+    const l=innerLight[i]+bb*.6;const c=new THREE.Color().setHSL(h%1,.65,Math.min(.4,l));
+    cAttr.array[i3]=c.r;cAttr.array[i3+1]=c.g;cAttr.array[i3+2]=c.b;
+  }
+  cAttr.needsUpdate=true;
+
+  // 气球
+  updateBalloons(dt,elapsed);
+
+  // 星空
+  stars.rotation.y+=dt*.02;stars.rotation.x+=dt*.006;
+
+  // Bloom
+  bloomPass.strength=.15+(currentR-.4)/3.1*.35;
+
+  // radiusDisplay updated in updateUI
+
+  if((handDetected||mouseActive)&&hintBar.style.opacity!=='0'){hintBar.style.transition='opacity 2s';hintBar.style.opacity='0'}
+  else if(!handDetected&&!mouseActive&&performance.now()-lastHandTime>4000){hintBar.style.transition='opacity 1s';hintBar.style.opacity='1'}
+
+  composer.render();
+}
+
+// ==================== 窗口 ====================
+addEventListener('resize',()=>{camera.aspect=innerWidth/innerHeight;camera.updateProjectionMatrix();renderer.setSize(innerWidth,innerHeight);composer.setSize(innerWidth,innerHeight)});
+
+// ==================== 启动 ====================
+requestAnimationFrame(ts=>{breathStart=ts;animate(ts)});
+
+console.log('🎉 手势粒子 v4');
+console.log('  ☝️1指→①  ✌️2指→②  🤟3指→③  🖖4指→天天开心+气球');
+console.log('  🖱拖拽→旋转  ⌨1-4=形态 0=球体 R=重置 空格=截图 F=全屏');
+</script>
+</body>
+</html>

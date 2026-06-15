@@ -1,0 +1,15 @@
+server:
+  port: ${AI_GATEWAY_PORT:8082}
+
+spring:
+  application:
+    name: ai-gateway
+
+ai:
+  dashscope:
+    api-key: ${DASHSCOPE_API_KEY}
+    model: ${DASHSCOPE_MODEL:qwen-plus}
+
+logging:
+  level:
+    com.ai: INFO

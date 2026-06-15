@@ -1,0 +1,38 @@
+package com.student.controller;
+
+import com.student.dto.ApiResponse;
+import com.student.dto.LoginRequest;
+import com.student.dto.RegisterRequest;
+import com.student.service.UserService;
+import org.springframework.web.bind.annotation.*;
+
+import javax.validation.Valid;
+
+@RestController
+@RequestMapping("/api/auth")
+public class AuthController {
+
+    private final UserService userService;
+
+    public AuthController(UserService userService) {
+        this.userService = userService;
+    }
+
+    @PostMapping("/register")
+    public ApiResponse<?> register(@Valid @RequestBody RegisterRequest request) {
+        try {
+            return ApiResponse.success("注册成功", userService.register(request));
+        } catch (RuntimeException e) {
+            return ApiResponse.error(400, e.getMessage());
+        }
+    }
+
+    @PostMapping("/login")
+    public ApiResponse<?> login(@Valid @RequestBody LoginRequest request) {
+        try {
+            return ApiResponse.success("登录成功", userService.login(request));
+        } catch (RuntimeException e) {
+            return ApiResponse.error(401, e.getMessage());
+        }
+    }
+}
