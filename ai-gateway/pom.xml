@@ -21,6 +21,12 @@
     </properties>
 
     <dependencies>
+        <!-- Swagger UI -->
+        <dependency>
+            <groupId>org.springdoc</groupId>
+            <artifactId>springdoc-openapi-webflux-ui</artifactId>
+            <version>1.7.0</version>
+        </dependency>
         <!-- WebFlux for reactive SSE streaming -->
         <dependency>
             <groupId>org.springframework.boot</groupId>
